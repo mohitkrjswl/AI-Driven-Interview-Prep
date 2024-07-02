@@ -1,7 +1,7 @@
 "use client"
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button"
-
+import { v4 as uuidv4 } from 'uuid';
 
 import {
   Dialog,
@@ -14,19 +14,48 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { chatSession } from '@/utils/GeminiAIModal';
+import { LoaderCircle } from 'lucide-react';
+import { db } from '@/utils/db';
+import { MockInterview } from '@/utils/schema';
+import { useUser } from '@clerk/nextjs';
+import moment from 'moment/moment';
 
 function AddNewInterview() {
   const [openDialog, setOpenDialog] = useState(false);
-  const [jobPosition, setJobPosition] = useState();
-  const [jobDesc, setJobdesc] = useState();
-  const [jobExperience, setJobExperience] = useState();
+  const [jobPosition, setJobPosition] = useState('');
+  const [jobDesc, setJobdesc] = useState('');
+  const [jobExperience, setJobExperience] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [jsonResponse, setJsonResponse] = useState([]);
+  const { user } = useUser();
 
   const onSubmit = async (e) => {
+    setLoading(true)
     e.preventDefault()
     console.log(jobDesc, jobExperience, jobPosition)
     const InputPrompt = `Job Position: ${jobPosition}, Job Description: ${jobDesc}, Years of Experience: ${jobExperience}, Depends on Job Position, Job Description, Years of Experience give us 10 interview questions along with answers in json format. Give us question and answer in json.`;
     const result = await chatSession.sendMessage(InputPrompt);
-    console.log(result.response.text());
+    const mockJsonResp = (result.response.text()).replace('```json', '').replace('```', '')
+    console.log(JSON.parse(mockJsonResp));
+    setJsonResponse(mockJsonResp);
+
+    if (mockJsonResp) {
+      const resp = db.insert(MockInterview).values({
+        mockId: uuidv4(),
+        jsonMockResp: mockJsonResp,
+        jobPosition: jobPosition,
+        jobDesc: jobDesc,
+
+        jobExperience: jobExperience,
+        createdBy: user?.primaryEmailAddress?.emailAddress,
+        createdAt: moment().format('DD-MM-YYYY')
+      }).returning({ mockId: MockInterview.mockId })
+      console.log('Inserted ID:', resp)
+    }
+    else {
+      console.log("ERROR");
+    }
+    setLoading(false)
   }
   return (
     <div>
@@ -37,9 +66,9 @@ function AddNewInterview() {
       </div>
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
         <DialogContent className='bg-white rounded-lg p-5 max-w-2xl'>
-          <DialogHeader>
+          <DialogHeader >
             <DialogTitle className='text-xl'>Tell us about your Job role</DialogTitle>
-            <DialogDescription>
+            <DialogDescription >
               <form onSubmit={onSubmit}>
                 <div>
                   <h2>Add details about your Job position/Role, job description and years of experience.</h2>
@@ -61,8 +90,12 @@ function AddNewInterview() {
                   <Button type='button' variant='ghost' onClick={() => setOpenDialog(false)} className='rounded-md'>
                     Cancel
                   </Button>
-                  <Button type='submit' className='rounded-md'>
-                    Start Interview
+                  <Button type='submit' disabled={loading} className='rounded-md'>
+                    {loading ?
+                      <>
+                        <LoaderCircle className='animate-spin' />Generating from AI
+                      </> : 'Start Interview'
+                    }
                   </Button>
                 </div>
               </form>
